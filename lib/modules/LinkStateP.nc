@@ -180,40 +180,40 @@ implementation {
     }
 
     event message_t* Receiver.receive(message_t* msg, void* payload, uint8_t len) {
-        pack* myMsg;
-        LSA receivedLSA;
-        
-        if(len != sizeof(pack)) return msg;
-            
-        myMsg = (pack*) payload;
-            
-        if(myMsg->protocol != PROTOCOL_LINKSTATE) return msg;
-            
-        memcpy(&receivedLSA, myMsg->payload, sizeof(LSA));
-            
-        // Check if this is new LSA information
-        if(!call Cache.contains(receivedLSA.src) || 
-           receivedLSA.seq > ((LSA)call Cache.get(receivedLSA.src)).seq) {
-                
-            dbg(ROUTING_CHANNEL, "Node %d: Received new LSA from %d\n", 
-                TOS_NODE_ID, receivedLSA.src);
-                
-            // Update cache
-            call Cache.insert(receivedLSA.src, receivedLSA);
-                
-            // Forward LSA
-            if(myMsg->TTL > 0) {
-                pack forwardPackage = *myMsg;
-                forwardPackage.TTL--;
-                call Sender.send(forwardPackage, AM_BROADCAST_ADDR);
-            }
-                
-            // Recalculate routes
-            runDijkstra();
-        }
-        
-        return msg;
-    }
+       pack* myMsg;
+       LSA tempLSA;
+       
+       if(len != sizeof(pack)) return msg;
+           
+       myMsg = (pack*) payload;
+           
+       if(myMsg->protocol != PROTOCOL_LINKSTATE) return msg;
+           
+       memcpy(&tempLSA, myMsg->payload, sizeof(LSA));
+           
+       // Check if this is new LSA information
+       if(!call Cache.contains(tempLSA.src) || 
+          tempLSA.seq > ((LSA)call Cache.get(tempLSA.src)).seq) {
+               
+           dbg(ROUTING_CHANNEL, "Node %d: Received new LSA from %d\n", 
+               TOS_NODE_ID, tempLSA.src);
+               
+           // Update cache
+           call Cache.insert(tempLSA.src, tempLSA);
+               
+           // Forward LSA
+           if(myMsg->TTL > 0) {
+               pack forwardPackage = *myMsg;
+               forwardPackage.TTL--;
+               call Sender.send(forwardPackage, AM_BROADCAST_ADDR);
+           }
+               
+           // Recalculate routes
+           runDijkstra();
+       }
+       
+       return msg;
+   }
 
     event void LSATimer.fired() {
         call LinkState.floodLSA();

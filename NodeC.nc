@@ -30,7 +30,8 @@ implementation {
     components LinkStateC; 
     components IPC; 
 
-
+    components new HashmapC(uint32_t, 20) as SeenTable;
+    Node.Seen -> SeenTable;
 
     Node -> MainC.Boot;
     Node.Receive -> GeneralReceive;

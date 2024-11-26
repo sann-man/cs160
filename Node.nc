@@ -18,6 +18,7 @@ module Node {
    uses interface Timer<TMilli> as NeighborDiscoveryTimer;
    uses interface LinkState; 
    uses interface IP; 
+   uses interface Hashmap<uint32_t> as Seen; // Add this line
 }
 
 implementation {
@@ -90,36 +91,54 @@ implementation {
    }
 
    event message_t* Receive.receive(message_t* msg, void* payload, uint8_t len) {
-      if (len == sizeof(pack)) {
+      if(len == sizeof(pack)) {
          pack* myMsg = (pack*) payload;
-         // dbg(GENERAL_CHANNEL, "Package Received from %d\n", myMsg->src);
 
-         if (myMsg->type == TYPE_REQUEST) {
-            // Handle neighbor discovery request
-            dbg(NEIGHBOR_CHANNEL, "Received payload from %d\n", myMsg->src);
+         // Log packet reception
+         dbg(GENERAL_CHANNEL, "Node %d Received packet from %d\n", TOS_NODE_ID, myMsg->src);
 
-            // Send reply message
-            sendPackage.src = TOS_NODE_ID;
-            sendPackage.dest = myMsg->src;
-            sendPackage.type = TYPE_REPLY;
-            sendPackage.protocol = PROTOCOL_PING;
-            memcpy(sendPackage.payload, "REPLY", 5);
+         switch(myMsg->protocol) {
+               case PROTOCOL_PING:
+                  dbg(GENERAL_CHANNEL, "PING packet received from %d\n", myMsg->src);
+                  
+                  if(myMsg->dest == AM_BROADCAST_ADDR) {
+                     // Handle discovery ping
+                     call NeighborDiscovery.handleNeighbor(myMsg->src, 100);
+                     
+                     // Send reply
+                     makePack(&sendPackage, TOS_NODE_ID, myMsg->src, MAX_TTL, 
+                             PROTOCOL_PINGREPLY, sequenceNumber++, 
+                             (uint8_t*)"REPLY", PACKET_MAX_PAYLOAD_SIZE);
+                     
+                     call Sender.send(sendPackage, myMsg->src);
+                  } else if(myMsg->dest == TOS_NODE_ID) {
+                     // Handle directed ping
+                     signal IP.receive(myMsg);
+                  }
+                  break;
 
-            if (call Sender.send(sendPackage, myMsg->src) == SUCCESS) {
-               dbg(NEIGHBOR_CHANNEL, "Reply sent to %d\n", myMsg->src);
-            }
+               case PROTOCOL_PINGREPLY:
+                  dbg(GENERAL_CHANNEL, "PINGREPLY received from %d\n", myMsg->src);
+                  call NeighborDiscovery.handleNeighbor(myMsg->src, 100);
+                  signal IP.receive(myMsg);
+                  break;
 
-            // Add or update neighbor
-            call NeighborDiscovery.handleNeighbor(myMsg->src, 100);
-         } else if (myMsg->type == TYPE_REPLY) {
-            // Handle neighbor discovery reply
-            dbg(NEIGHBOR_CHANNEL, "Received REPLY from %d\n", myMsg->src);
-            call NeighborDiscovery.handleNeighbor(myMsg->src, 100);
+               case PROTOCOL_LINKSTATE:
+                  dbg(ROUTING_CHANNEL, "LINKSTATE packet received from %d\n", myMsg->src);
+                  // Forward LSA packet to IP layer for processing
+                  signal IP.receive(myMsg);
+                  break;
+
+               case PROTOCOL_FLOOD:
+                  dbg(FLOODING_CHANNEL, "FLOOD packet received\n");
+                  signal IP.receive(myMsg);
+                  break;
+
+               default:
+                  dbg(GENERAL_CHANNEL, "Unknown protocol %d\n", myMsg->protocol);
+                  break;
          }
-
-         return msg;
       }
-      dbg(GENERAL_CHANNEL, "Unknown Packet Type %d\n", len);
       return msg;
    }
 
@@ -164,19 +183,14 @@ implementation {
    }
 
    event void CommandHandler.ping(uint16_t destination, uint8_t *payload) {
-      dbg(GENERAL_CHANNEL, "Node %d: Initiating ping to Node %d\n", TOS_NODE_ID, destination);
+      // Use the global sendPackage instead of declaring a new one
+      dbg(GENERAL_CHANNEL, "PING issued to %d\n", destination);
       
       makePack(&sendPackage, TOS_NODE_ID, destination, MAX_TTL, 
                PROTOCOL_PING, sequenceNumber++, 
                payload, PACKET_MAX_PAYLOAD_SIZE);
-               
-      if(call IP.send(sendPackage) == SUCCESS) {
-         dbg(GENERAL_CHANNEL, "Node %d: Successfully initiated ping to %d\n", 
-               TOS_NODE_ID, destination);
-      } else {
-         dbg(GENERAL_CHANNEL, "Node %d: Failed to initiate ping to %d\n", 
-               TOS_NODE_ID, destination);
-      }
+      
+      call IP.send(sendPackage);
    }
 
 
