@@ -7,6 +7,7 @@
 #define MAX_NODES 20
 #define MAX_NUMBER 65535
 #define INFINITE_COST 0xFFFF // infinite cost for Dijkstra 
+#define INVALID_NODE 0xFFFF
 
 
 typedef struct {
