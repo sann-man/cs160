@@ -8,17 +8,19 @@
 #include "includes/RoutingTable.h"
 
 module Node {
-   uses interface Boot;
-   uses interface SplitControl as AMControl;
-   uses interface Receive;
-   uses interface SimpleSend as Sender;
-   uses interface CommandHandler;
-   uses interface NeighborDiscovery;
-   uses interface Flooding;
-   uses interface Timer<TMilli> as NeighborDiscoveryTimer;
-   uses interface LinkState; 
-   uses interface IP; 
-   uses interface Hashmap<uint32_t> as Seen; // Add this line
+   uses {
+       interface Boot;
+       interface SplitControl as AMControl;
+       interface Receive;
+       interface SimpleSend as Sender;
+       interface CommandHandler;
+       interface NeighborDiscovery;
+       interface Flooding;
+       interface Timer<TMilli> as NeighborDiscoveryTimer;
+       interface LinkState;
+       interface IP;
+       interface Hashmap<uint32_t> as Seen;
+   }
 }
 
 implementation {
@@ -26,165 +28,132 @@ implementation {
    uint16_t sequenceNumber = 0;
    neighbor_t neighborTable[MAX_NEIGHBORS];
    uint8_t neighborCount = 0;
+   bool initialized = FALSE;
 
-   // Prototypes
-   void makePack(pack *Package, uint16_t src, uint16_t dest, uint16_t TTL, uint16_t Protocol, uint16_t seq, uint8_t *payload, uint8_t length);
+   void makePack(pack *Package, uint16_t src, uint16_t dest, uint16_t TTL, uint16_t protocol, uint16_t seq, uint8_t *payload, uint8_t length);
 
    event void Boot.booted() {
       call AMControl.start();
-      dbg(GENERAL_CHANNEL, "Booted\n");
-
-      // Start neighbor discovery
-      if (call NeighborDiscovery.start() == SUCCESS) {
-         dbg("NeighborDiscovery", "NeighborDiscovery start command was successful.\n");
-      } else {
-         dbg("NeighborDiscovery", "NeighborDiscovery start command failed.\n");
-      }
-
-      if (call Flooding.start() == SUCCESS) {
-         dbg("Flooding", "Flooding start command was successful.\n");
-      } else {
-         dbg("Flooding", "Flooding start command failed.\n");
-      }
-
-      // LinkState start
-      if (call LinkState.start() == SUCCESS) {
-         dbg(ROUTING_CHANNEL, "LinkState start command was successful.\n");
-      } else {
-         dbg(ROUTING_CHANNEL, "LinkState start command failed.\n");
-      }
-
-      // IP layer
-      // Start IP
-      if (call IP.start() == SUCCESS) {
-         dbg(ROUTING_CHANNEL, "IP start command was successful.\n");
-      } else {
-         dbg(ROUTING_CHANNEL, "IP start command failed.\n");
-      }
-
-      // Start the neighbor discovery timer
-      call NeighborDiscoveryTimer.startPeriodic(50000);
+      dbg(GENERAL_CHANNEL, "Node %d: Booted\n", TOS_NODE_ID);
    }
 
    event void AMControl.startDone(error_t err) {
       if (err == SUCCESS) {
-         dbg(GENERAL_CHANNEL, "Radio On\n");
+         dbg(GENERAL_CHANNEL, "Node %d: Radio On\n", TOS_NODE_ID);
+         initialized = TRUE;
+         
+         if (call NeighborDiscovery.start() == SUCCESS) {
+            dbg(NEIGHBOR_CHANNEL, "Node %d: Neighbor Discovery started\n", TOS_NODE_ID);
+         }
+         
+         if (call Flooding.start() == SUCCESS) {
+            dbg(FLOODING_CHANNEL, "Node %d: Flooding started\n", TOS_NODE_ID);
+         }
+         
+         if (call LinkState.start() == SUCCESS) {
+            dbg(ROUTING_CHANNEL, "Node %d: Link State started\n", TOS_NODE_ID);
+         }
+         
+         if (call IP.start() == SUCCESS) {
+            dbg(ROUTING_CHANNEL, "Node %d: IP started\n", TOS_NODE_ID);
+         }
       } else {
-         //Retry until successful
          call AMControl.start();
       }
    }
 
-   event void NeighborDiscovery.done(){
-      dbg(GENERAL_CHANNEL, "Neighbor Discovery DONE\n");
-      // LinkState.floodLSA();
-   }
-
    event void AMControl.stopDone(error_t err) {}
 
-   event void Sender.sendDone(message_t* msg, error_t error) {
-      // if (error == SUCCESS) {
-      //    dbg(GENERAL_CHANNEL, "Packet sent successfully\n");
-      // } else {
-      //    dbg(GENERAL_CHANNEL, "Packet send failed\n");
-      // }
-   }
-
    event message_t* Receive.receive(message_t* msg, void* payload, uint8_t len) {
-      if(len == sizeof(pack)) {
-         pack* myMsg = (pack*) payload;
+      pack* myMsg;
+      
+      if (len != sizeof(pack)) return msg;
+      myMsg = (pack*) payload;
+      
+      dbg(GENERAL_CHANNEL, "Node %d: Received packet from %d\n", TOS_NODE_ID, myMsg->src);
 
-         // Log packet reception
-         dbg(GENERAL_CHANNEL, "Node %d Received packet from %d\n", TOS_NODE_ID, myMsg->src);
+      switch(myMsg->protocol) {
+         case PROTOCOL_PING:
+            dbg(GENERAL_CHANNEL, "Node %d: PING packet received from %d\n", TOS_NODE_ID, myMsg->src);
+            
+            if(myMsg->dest == AM_BROADCAST_ADDR) {
+               call NeighborDiscovery.handleNeighbor(myMsg->src, 100);
+               
+               makePack(&sendPackage, TOS_NODE_ID, myMsg->src, MAX_TTL, 
+                       PROTOCOL_PINGREPLY, sequenceNumber++, 
+                       (uint8_t*)"REPLY", PACKET_MAX_PAYLOAD_SIZE);
+               
+               call IP.send(sendPackage);
+            } else if(myMsg->dest == TOS_NODE_ID) {
+               signal IP.receive(myMsg);
+            }
+            break;
 
-         switch(myMsg->protocol) {
-               case PROTOCOL_PING:
-                  dbg(GENERAL_CHANNEL, "PING packet received from %d\n", myMsg->src);
-                  
-                  if(myMsg->dest == AM_BROADCAST_ADDR) {
-                     // Handle discovery ping
-                     call NeighborDiscovery.handleNeighbor(myMsg->src, 100);
-                     
-                     // Send reply
-                     makePack(&sendPackage, TOS_NODE_ID, myMsg->src, MAX_TTL, 
-                             PROTOCOL_PINGREPLY, sequenceNumber++, 
-                             (uint8_t*)"REPLY", PACKET_MAX_PAYLOAD_SIZE);
-                     
-                     call Sender.send(sendPackage, myMsg->src);
-                  } else if(myMsg->dest == TOS_NODE_ID) {
-                     // Handle directed ping
-                     signal IP.receive(myMsg);
-                  }
-                  break;
+         case PROTOCOL_PINGREPLY:
+            dbg(GENERAL_CHANNEL, "Node %d: PINGREPLY received from %d\n", TOS_NODE_ID, myMsg->src);
+            call NeighborDiscovery.handleNeighbor(myMsg->src, 100);
+            signal IP.receive(myMsg);
+            break;
 
-               case PROTOCOL_PINGREPLY:
-                  dbg(GENERAL_CHANNEL, "PINGREPLY received from %d\n", myMsg->src);
-                  call NeighborDiscovery.handleNeighbor(myMsg->src, 100);
-                  signal IP.receive(myMsg);
-                  break;
+         case PROTOCOL_LINKSTATE:
+            dbg(ROUTING_CHANNEL, "Node %d: LINKSTATE packet received from %d\n", TOS_NODE_ID, myMsg->src);
+            signal IP.receive(myMsg);
+            break;
 
-               case PROTOCOL_LINKSTATE:
-                  dbg(ROUTING_CHANNEL, "LINKSTATE packet received from %d\n", myMsg->src);
-                  // Forward LSA packet to IP layer for processing
-                  signal IP.receive(myMsg);
-                  break;
-
-               case PROTOCOL_FLOOD:
-                  dbg(FLOODING_CHANNEL, "FLOOD packet received\n");
-                  signal IP.receive(myMsg);
-                  break;
-
-               default:
-                  dbg(GENERAL_CHANNEL, "Unknown protocol %d\n", myMsg->protocol);
-                  break;
-         }
+         default:
+            dbg(GENERAL_CHANNEL, "Node %d: Unknown protocol %d from %d\n", 
+                TOS_NODE_ID, myMsg->protocol, myMsg->src);
+            break;
       }
       return msg;
    }
 
    event void IP.receive(pack* msg) {
-      dbg(ROUTING_CHANNEL, "Node %d: Received IP packet from %d with protocol %d\n", 
-         TOS_NODE_ID, msg->src, msg->protocol);
-         
       switch(msg->protocol) {
          case PROTOCOL_PING:
-               // Handle ping packets
-               dbg(GENERAL_CHANNEL, "Ping received from %d\n", msg->src);
-               // Create ping reply
-               makePack(&sendPackage, TOS_NODE_ID, msg->src, MAX_TTL, 
-                     PROTOCOL_PINGREPLY, sequenceNumber++, 
-                     (uint8_t*)"PING REPLY", PACKET_MAX_PAYLOAD_SIZE);
-               // Changed from (&sendPackage, msg->src) to just sendPackage
-               call IP.send(sendPackage);
-               break;
-               
+            dbg(GENERAL_CHANNEL, "Node %d: Processing ping from %d\n", TOS_NODE_ID, msg->src);
+            makePack(&sendPackage, TOS_NODE_ID, msg->src, MAX_TTL, 
+                  PROTOCOL_PINGREPLY, sequenceNumber++, 
+                  (uint8_t*)"PING REPLY", PACKET_MAX_PAYLOAD_SIZE);
+            call IP.send(sendPackage);
+            break;
+            
          case PROTOCOL_PINGREPLY:
-               dbg(GENERAL_CHANNEL, "Ping Reply from %d\n", msg->src);
-               break;
-               
-         default:
-               dbg(GENERAL_CHANNEL, "Unknown protocol %d\n", msg->protocol);
-               break;
+            dbg(GENERAL_CHANNEL, "Node %d: Processing ping reply from %d\n", TOS_NODE_ID, msg->src);
+            break;
+            
+         case PROTOCOL_LINKSTATE:
+            dbg(ROUTING_CHANNEL, "Node %d: Processing LSA from %d\n", TOS_NODE_ID, msg->src);
+            call LinkState.floodLSA();
+            break;
+      }
+   }
+
+   event void Sender.sendDone(message_t* msg, error_t error) {
+      if(error == SUCCESS) {
+         dbg(GENERAL_CHANNEL, "Node %d: Packet sent successfully\n", TOS_NODE_ID);
+      } else {
+         dbg(GENERAL_CHANNEL, "Node %d: Failed to send packet\n", TOS_NODE_ID);
       }
    }
 
    event void NeighborDiscoveryTimer.fired() {
+      makePack(&sendPackage, TOS_NODE_ID, AM_BROADCAST_ADDR, 1, 
+               PROTOCOL_PING, sequenceNumber++, 
+               (uint8_t*)"DISCOVERY", PACKET_MAX_PAYLOAD_SIZE);
       
-      // Prepare message
-      makePack(&sendPackage, TOS_NODE_ID, AM_BROADCAST_ADDR, 1, PROTOCOL_PING, 0, (uint8_t*)"Payload", PACKET_MAX_PAYLOAD_SIZE);
-      sendPackage.type = TYPE_REQUEST;
-
-      // Send the package
       if (call Sender.send(sendPackage, AM_BROADCAST_ADDR) == SUCCESS) {
-         dbg(NEIGHBOR_CHANNEL, "package sent successfully\n");
-      } else {
-         dbg(NEIGHBOR_CHANNEL, "Failed to send msg\n");
+         dbg(NEIGHBOR_CHANNEL, "Node %d: Discovery packet sent\n", TOS_NODE_ID);
       }
    }
 
+   event void NeighborDiscovery.done() {
+      dbg(GENERAL_CHANNEL, "Node %d: Neighbor Discovery complete\n", TOS_NODE_ID);
+      call LinkState.floodLSA();
+   }
+
    event void CommandHandler.ping(uint16_t destination, uint8_t *payload) {
-      // Use the global sendPackage instead of declaring a new one
-      dbg(GENERAL_CHANNEL, "PING issued to %d\n", destination);
+      dbg(GENERAL_CHANNEL, "Node %d: Sending ping to %d\n", TOS_NODE_ID, destination);
       
       makePack(&sendPackage, TOS_NODE_ID, destination, MAX_TTL, 
                PROTOCOL_PING, sequenceNumber++, 
@@ -193,14 +162,17 @@ implementation {
       call IP.send(sendPackage);
    }
 
-
    event void CommandHandler.printNeighbors() {
       uint8_t i;
-      for (i = 0; i < neighborCount; i++) {
-         dbg(NEIGHBOR_CHANNEL, "Neighbor: %d, Quality: %d, Active: %d\n", 
-             neighborTable[i].neighborID, 
-             neighborTable[i].linkQuality, 
-             neighborTable[i].isActive);
+      neighbor_t neighbors[MAX_NEIGHBORS];
+      call NeighborDiscovery.getNeighbor(neighbors);
+      
+      dbg(NEIGHBOR_CHANNEL, "Node %d: Neighbor List:\n", TOS_NODE_ID);
+      for(i = 0; i < MAX_NEIGHBORS; i++) {
+         if(neighbors[i].isActive) {
+            dbg(NEIGHBOR_CHANNEL, "\tNeighbor %d: Quality %d\n", 
+                neighbors[i].neighborID, neighbors[i].linkQuality);
+         }
       }
    }
 
@@ -209,34 +181,30 @@ implementation {
       uint8_t tableSize;
       uint8_t i;
 
-      // get the routing table from LinkState
       call LinkState.getRouteTable(routeTable, &tableSize);
       
+      if(tableSize == 0) {
+         dbg(ROUTING_CHANNEL, "Node %d: No routes in table\n", TOS_NODE_ID);
+         return;
+      }
+      
       dbg(ROUTING_CHANNEL, "Node %d Routing Table:\n", TOS_NODE_ID);
-      dbg(ROUTING_CHANNEL, "Dest\tNextHop\tCost\n");
+      dbg(ROUTING_CHANNEL, "   Dest\tNext\tCost\n");
+      dbg(ROUTING_CHANNEL, "   ----\t----\t----\n");
       
       for(i = 0; i < tableSize; i++) {
-         dbg(ROUTING_CHANNEL, "%d\t%d\t%d\n", 
+         dbg(ROUTING_CHANNEL, "   %d\t%d\t%d\n", 
                routeTable[i].dest,
                routeTable[i].nextHop,
                routeTable[i].cost);
       }
-
-      if(tableSize == 0) {
-         dbg(ROUTING_CHANNEL, "Node %d: Routing table is empty\n", TOS_NODE_ID);
-      }
    }
 
    event void CommandHandler.printLinkState() {}
-
    event void CommandHandler.printDistanceVector() {}
-
    event void CommandHandler.setTestServer() {}
-
    event void CommandHandler.setTestClient() {}
-
    event void CommandHandler.setAppServer() {}
-
    event void CommandHandler.setAppClient() {}
 
    void makePack(pack *Package, uint16_t src, uint16_t dest, uint16_t TTL, uint16_t protocol, uint16_t seq, uint8_t* payload, uint8_t length) {

@@ -4,6 +4,7 @@
 configuration LinkStateC {
     provides interface LinkState;
 }
+
 implementation {
     components LinkStateP;
     components new SimpleSendC(AM_PACK);
@@ -17,4 +18,6 @@ implementation {
     LinkStateP.Cache -> CacheC;
     LinkStateP.Neighbor -> NeighborDiscoveryC;
     LinkStateP.LSATimer -> LSATimerC;
+    
+    
 }
