@@ -17,6 +17,7 @@ module FloodingP {
   provides interface Flooding;
 }
 
+
 implementation {
 
     uint16_t sequence = 0;
@@ -47,7 +48,7 @@ implementation {
     return FALSE; // packet not seen before 
     }
 
-    // Function to add a packet to the flooding table
+    // function to add a packet to the flooding table
     void addPacketToFloodingTable(uint16_t src, uint16_t seq) {
         uint8_t i;
         uint32_t currentTime = call FloodingTimer.getNow();

@@ -4,7 +4,6 @@
  *
  * @author UCM ANDES Lab
  * @date   2013/09/03
- *
  */
 #include <Timer.h>
 #include "includes/CommandMsg.h"
@@ -19,32 +18,26 @@ implementation {
     components ActiveMessageC;
     components new SimpleSendC(AM_PACK);
     components CommandHandlerC;
-
-    // 1 
-    components FloodingC; 
+    components FloodingC;
     components NeighborDiscoveryC;
     components new TimerMilliC() as NeighborDiscoveryTimer;
-    
-
-    // 2
-    components LinkStateC; 
-    components IPC; 
-
+    components LinkStateC;
+    components IPC;
     components new HashmapC(uint32_t, 20) as SeenTable;
-    Node.Seen -> SeenTable;
+    components TransportC;
+    components TestC;
 
+    Node.Seen -> SeenTable;
     Node -> MainC.Boot;
     Node.Receive -> GeneralReceive;
     Node.AMControl -> ActiveMessageC;
     Node.Sender -> SimpleSendC;
     Node.CommandHandler -> CommandHandlerC;
-    // 1
     Node.NeighborDiscovery -> NeighborDiscoveryC;
-    Node.Flooding -> FloodingC; 
-    // 2 
-    Node.LinkState -> LinkStateC; 
-    Node.IP -> IPC; 
-    
-    // Add the NeighborDiscoveryTimer
+    Node.Flooding -> FloodingC;
+    Node.LinkState -> LinkStateC;
+    Node.IP -> IPC;
     Node.NeighborDiscoveryTimer -> NeighborDiscoveryTimer;
+    Node.Test -> TestC;    
+    Node.Transport -> TransportC;  
 }

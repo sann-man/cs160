@@ -9,17 +9,19 @@
 
 module Node {
    uses {
-       interface Boot;
-       interface SplitControl as AMControl;
-       interface Receive;
-       interface SimpleSend as Sender;
-       interface CommandHandler;
-       interface NeighborDiscovery;
-       interface Flooding;
-       interface Timer<TMilli> as NeighborDiscoveryTimer;
-       interface LinkState;
-       interface IP;
-       interface Hashmap<uint32_t> as Seen;
+      interface Boot;
+      interface SplitControl as AMControl;
+      interface Receive;
+      interface SimpleSend as Sender;
+      interface CommandHandler;
+      interface NeighborDiscovery;
+      interface Flooding;
+      interface LinkState;
+      interface IP;
+      interface Test;
+      interface Transport;
+      interface Timer<TMilli> as NeighborDiscoveryTimer;
+      interface Hashmap<uint32_t> as Seen;
    }
 }
 
@@ -202,10 +204,39 @@ implementation {
 
    event void CommandHandler.printLinkState() {}
    event void CommandHandler.printDistanceVector() {}
-   event void CommandHandler.setTestServer() {}
-   event void CommandHandler.setTestClient() {}
-   event void CommandHandler.setAppServer() {}
-   event void CommandHandler.setAppClient() {}
+
+   // project 3 additions
+   event void CommandHandler.setTestServer() {
+        dbg(TRANSPORT_CHANNEL, "Starting test server on node %d\n", TOS_NODE_ID);
+        if(call Test.startServer(41) == SUCCESS) {
+            dbg(TRANSPORT_CHANNEL, "Test server started successfully\n");
+            return SUCCESS;
+        } else {
+            dbg(TRANSPORT_CHANNEL, "Test server failed to start\n");
+            return FAIL;
+        }
+   }
+
+   event void CommandHandler.setTestClient() {
+      dbg(TRANSPORT_CHANNEL, "Starting test client on node %d\n", TOS_NODE_ID);
+      if(call Test.startClient(1, 41, 42) == SUCCESS) {
+         dbg(TRANSPORT_CHANNEL, "Test client started successfully\n");
+         return SUCCESS;
+      } else {
+         dbg(TRANSPORT_CHANNEL, "Test client failed to start\n");
+         return FAIL;
+      }
+   }
+
+   event void CommandHandler.setAppServer() {
+      dbg(TRANSPORT_CHANNEL, "App server not implemented\n");
+      return SUCCESS;
+   }
+
+   event void CommandHandler.setAppClient() {
+      dbg(TRANSPORT_CHANNEL, "App client not implemented\n");
+      return SUCCESS;
+   }
 
    void makePack(pack *Package, uint16_t src, uint16_t dest, uint16_t TTL, uint16_t protocol, uint16_t seq, uint8_t* payload, uint8_t length) {
       Package->src = src;
@@ -215,4 +246,7 @@ implementation {
       Package->protocol = protocol;
       memcpy(Package->payload, payload, length);
    }
+
+
+   
 }

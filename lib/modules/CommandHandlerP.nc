@@ -46,41 +46,41 @@ implementation{
 
             //Find out which command was called and call related command
             switch(commandID){
-            // A ping will have the destination of the packet as the first
-            // value and the string in the remainder of the payload
-            case CMD_PING:
-                dbg(COMMAND_CHANNEL, "Command Type: Ping\n");
-                signal CommandHandler.ping(buff[0], &buff[1]);
-                break;
+                // A ping will have the destination of the packet as the first
+                // value and the string in the remainder of the payload
+                case CMD_PING:
+                    dbg(COMMAND_CHANNEL, "Command Type: Ping\n");
+                    signal CommandHandler.ping(buff[0], &buff[1]);
+                    break;
 
-            case CMD_NEIGHBOR_DUMP:
-                dbg(COMMAND_CHANNEL, "Command Type: Neighbor Dump\n");
-                signal CommandHandler.printNeighbors();
-                break;
+                case CMD_NEIGHBOR_DUMP:
+                    dbg(COMMAND_CHANNEL, "Command Type: Neighbor Dump\n");
+                    signal CommandHandler.printNeighbors();
+                    break;
 
-            case CMD_LINKSTATE_DUMP:
-                dbg(COMMAND_CHANNEL, "Command Type: Link State Dump\n");
-                signal CommandHandler.printLinkState();
-                break;
+                case CMD_LINKSTATE_DUMP:
+                    dbg(COMMAND_CHANNEL, "Command Type: Link State Dump\n");
+                    signal CommandHandler.printLinkState();
+                    break;
 
-            case CMD_ROUTETABLE_DUMP:
-                dbg(COMMAND_CHANNEL, "Command Type: Route Table Dump\n");
-                signal CommandHandler.printRouteTable();
-                break;
+                case CMD_ROUTETABLE_DUMP:
+                    dbg(COMMAND_CHANNEL, "Command Type: Route Table Dump\n");
+                    signal CommandHandler.printRouteTable();
+                    break;
 
-            case CMD_TEST_CLIENT:
-                dbg(COMMAND_CHANNEL, "Command Type: Client\n");
-                signal CommandHandler.setTestClient();
-                break;
+                case CMD_TEST_SERVER:
+                    dbg(COMMAND_CHANNEL, "Command Type: Test Server\n");
+                    call CommandHandler.setTestServer();
+                    break;
 
-            case CMD_TEST_SERVER:
-                dbg(COMMAND_CHANNEL, "Command Type: Client\n");
-                signal CommandHandler.setTestServer();
-                break;
+                case CMD_TEST_CLIENT:
+                    dbg(COMMAND_CHANNEL, "Command Type: Test Client\n");
+                    call CommandHandler.setTestClient();
+                    break;
 
-            default:
-                dbg(COMMAND_CHANNEL, "CMD_ERROR: \"%d\" does not match any known commands.\n", msg->id);
-                break;
+                default:
+                    dbg(COMMAND_CHANNEL, "CMD_ERROR: \"%d\" does not match any known commands.\n", msg->id);
+                    break;
             }
             call Pool.put(raw_msg);
         }
@@ -96,5 +96,26 @@ implementation{
             return call Pool.get();
         }
         return raw_msg;
+    }
+
+
+    // 3 
+
+    command error_t CommandHandler.setTestServer() {
+        dbg(COMMAND_CHANNEL, "Test Server being initialized\n");
+        return SUCCESS;
+    }
+
+    command error_t CommandHandler.setTestClient() {
+        dbg(COMMAND_CHANNEL, "Test Client being initialized\n");
+        return SUCCESS;
+    }
+
+    command error_t CommandHandler.setAppServer() {
+        return SUCCESS;
+    }
+
+    command error_t CommandHandler.setAppClient() {
+        return SUCCESS;
     }
 }

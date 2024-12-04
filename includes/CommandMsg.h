@@ -1,7 +1,3 @@
-//Author: UCM ANDES Lab
-//$Author: abeltran2 $
-//$LastChangedBy: abeltran2 $
-
 #ifndef __COMMAND_MSG_H__
 #define __COMMAND_MSG_H__
 
@@ -22,5 +18,9 @@ typedef nx_struct CommandMsg{
 enum{
 	AM_COMMANDMSG=99
 };
+
+
+// Project 3 additions 
+
 
 #endif
