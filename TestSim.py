@@ -9,6 +9,8 @@ from CommandMsg import *
 
 class TestSim:
     moteids=[]
+   
+
     # COMMAND TYPES
     CMD_PING = 0
     CMD_NEIGHBOR_DUMP = 1
@@ -108,13 +110,15 @@ class TestSim:
 
     # Generic Command
     def sendCMD(self, ID, dest, payloadStr):
-        self.msg.set_dest(dest);
-        self.msg.set_id(ID);
+        self.msg.set_dest(dest)
+        self.msg.set_id(ID)
         self.msg.setString_payload(payloadStr)
 
+        print("Sending command ID=%d to node %d with payload %s" % (ID, dest, payloadStr))
+        
         self.pkt.setData(self.msg.data)
         self.pkt.setDestination(dest)
-        self.pkt.deliver(dest, self.t.time()+5)
+        self.pkt.deliver(dest, self.t.time() + 5)
 
     def ping(self, source, dest, msg):
         self.sendCMD(self.CMD_PING, source, "{0}{1}".format(chr(dest),msg));
@@ -130,14 +134,29 @@ class TestSim:
         self.t.addChannel(channelName, out);
 
 
+    # 
+    def runCommand(self, cmd, destination):
+        dest = int(destination)
+        if cmd == "test_server":
+            print("Starting test server on node %d" % dest)
+            self.sendCMD(5, dest, "test_server")  # CMD_TEST_SERVER = 5
+        elif cmd == "test_client":
+            print("Starting test client on node %d" % dest)
+            self.sendCMD(4, dest, "test_client")  # CMD_TEST_CLIENT = 4
 
-    def testserver(self, destination): 
-    # sets up a test server on athe specifieed node 
-        self.sendCMD(destination, "cmdTestServer");
+    def testServer(self, destination):
+        """
+        Start a test server
+        """
+        print("Initializing test server command")
+        self.runCommand("test_server", destination)
 
-    def testClient(self, destination): 
-        # sets up a test client on the specfied node
-        self.sendCMD(destination, "cmdTest"); 
+    def testClient(self, destination):
+        """
+        Start a test client
+        """
+        print("Initializing test client command")
+        self.runCommand("test_client", destination)
 
 def main():
     s = TestSim()

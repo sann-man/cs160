@@ -10,6 +10,7 @@
 #include "../../includes/command.h"
 #include "../../includes/channels.h"
 
+
 module CommandHandlerP{
    provides interface CommandHandler;
    uses interface Receive;
@@ -27,11 +28,10 @@ implementation{
             message_t *raw_msg;
             void *payload;
 
-            // Pop message out of queue.
             raw_msg = call Queue.dequeue();
             payload = call Packet.getPayload(raw_msg, sizeof(CommandMsg));
 
-            // Check to see if the packet is valid.
+            // check to see if the packet is valid.
             if(!payload){
                 call Pool.put(raw_msg);
                 post processCommand();
@@ -44,9 +44,9 @@ implementation{
             buff = (uint8_t*) msg->payload;
             commandID = msg->id;
 
-            //Find out which command was called and call related command
+            //find out which command was called and call related command
             switch(commandID){
-                // A ping will have the destination of the packet as the first
+                // a ping will have the destination of the packet as the first
                 // value and the string in the remainder of the payload
                 case CMD_PING:
                     dbg(COMMAND_CHANNEL, "Command Type: Ping\n");
@@ -70,12 +70,12 @@ implementation{
 
                 case CMD_TEST_SERVER:
                     dbg(COMMAND_CHANNEL, "Command Type: Test Server\n");
-                    call CommandHandler.setTestServer();
+                    signal CommandHandler.setTestServer();
                     break;
 
                 case CMD_TEST_CLIENT:
                     dbg(COMMAND_CHANNEL, "Command Type: Test Client\n");
-                    call CommandHandler.setTestClient();
+                    signal CommandHandler.setTestClient();
                     break;
 
                 default:
@@ -100,22 +100,7 @@ implementation{
 
 
     // 3 
+    // had setAppServer etc here but got rid of 
+    
 
-    command error_t CommandHandler.setTestServer() {
-        dbg(COMMAND_CHANNEL, "Test Server being initialized\n");
-        return SUCCESS;
-    }
-
-    command error_t CommandHandler.setTestClient() {
-        dbg(COMMAND_CHANNEL, "Test Client being initialized\n");
-        return SUCCESS;
-    }
-
-    command error_t CommandHandler.setAppServer() {
-        return SUCCESS;
-    }
-
-    command error_t CommandHandler.setAppClient() {
-        return SUCCESS;
-    }
 }
