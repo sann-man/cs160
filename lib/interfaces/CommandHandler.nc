@@ -8,4 +8,9 @@ interface CommandHandler {
     event void setTestClient();
     event void setAppServer();
     event void setAppClient();
+
+    // event void chatHello(uint8_t* payload);
+    // event void chatMsg(uint8_t* payload);
+    // event void chatWhisper(uint8_t* payload);
+    // event void chatListUsers();
 }

@@ -8,6 +8,11 @@
 #ifndef COMMAND_H
 #define COMMAND_H
 
+#define CMD_CHAT_MSG 11
+#define CMD_CHAT_WHISPER 12
+#define CMD_CHAT_LIST 13
+#define CMD_CHAT_HELLO 14
+
 // command ID Numbers
 enum {
     CMD_PING = 0,

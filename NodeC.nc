@@ -26,6 +26,7 @@ implementation {
     components new HashmapC(uint32_t, 20) as SeenTable;
     components TransportC;
     components TestC;
+    components ChatC; 
 
     Node.Seen -> SeenTable;
     Node -> MainC.Boot;
@@ -40,4 +41,5 @@ implementation {
     Node.NeighborDiscoveryTimer -> NeighborDiscoveryTimer;
     Node.Test -> TestC;    
     Node.Transport -> TransportC;  
+    Node.Chat -> ChatC; 
 }

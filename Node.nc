@@ -22,6 +22,8 @@ module Node {
       interface Transport;
       interface Timer<TMilli> as NeighborDiscoveryTimer;
       interface Hashmap<uint32_t> as Seen;
+
+      interface Chat; 
    }
 }
 
@@ -205,10 +207,11 @@ implementation {
    event void CommandHandler.printLinkState() {}
    event void CommandHandler.printDistanceVector() {}
 
+   // respond to cmd from simulation env 
    // project 3 additions
    event void CommandHandler.setTestServer() {
       dbg(TRANSPORT_CHANNEL, "Node %d: Test Server Command Received\n", TOS_NODE_ID);
-      if(call Test.startServer(41) == SUCCESS) {
+      if(call Test.startServer(10) == SUCCESS) {
          dbg(TRANSPORT_CHANNEL, "Node %d: Test server started successfully\n", TOS_NODE_ID);
       } else {
          dbg(TRANSPORT_CHANNEL, "Node %d: Test server failed to start\n", TOS_NODE_ID);
@@ -217,7 +220,7 @@ implementation {
 
    event void CommandHandler.setTestClient() {
       dbg(TRANSPORT_CHANNEL, "Node %d: Test Client Command Received\n", TOS_NODE_ID);
-      if(call Test.startClient(1, 41, 42) == SUCCESS) {
+      if(call Test.startClient(1, 10, 11) == SUCCESS) {
          dbg(TRANSPORT_CHANNEL, "Node %d: Test client started successfully\n", TOS_NODE_ID);
       } else {
          dbg(TRANSPORT_CHANNEL, "Node %d: Test client failed to start\n", TOS_NODE_ID);

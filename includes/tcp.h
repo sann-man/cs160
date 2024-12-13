@@ -6,7 +6,7 @@
 enum {
     FLAG_SYN = 0x1,    // 00000001
     FLAG_ACK = 0x2,    // 00000010
-    FLAG_FIN = 0x4,    // 00000100
+    FLAG_FIN = 0x4,    // .... 
     FLAG_DATA = 0x8    
 };
 

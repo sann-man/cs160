@@ -28,8 +28,6 @@ implementation {
     void payloadToTcpPacket(void* payload, tcp_packet* tcp);
     error_t sendTCPPacket(socket_t fd, uint8_t flags);
     void handleTCPPacket(socket_t fd, tcp_packet* tcp);
-
-
     // uint8_t getAvailableSpace(socket_t fd);
     // void enqueueForTransmission(socket_t fd, uint8_t* data, uint8_t len);
 
@@ -44,13 +42,14 @@ implementation {
         uint8_t data[SOCKET_BUFFER_SIZE];
     } transmit_queue_entry;
 
-    // dif states 
+    // congestion states 
     enum {
         SLOW_START = 0,
         CONGESTION_AVOIDANCE = 1,
         FAST_RECOVERY = 2
     };
 
+    // connection tear down 
     enum {
         FIN_WAIT_1 = 5,
         FIN_WAIT_2 = 6,
@@ -88,22 +87,23 @@ implementation {
         return fd;
     }
 
+    
+/// --------  congestion control + state mangment -------- //// 
     // new pack arrives 
-    // send more packs 
-// checks for stable newtowrk 
-
+// send more packs 
+    // checks for stable newtowrk 
     void handleNewAck(socket_t fd) {
         socket_store_t* sock = &sockets[fd];
         
         switch(sock->congestionState) {
-            case SLOW_START:
+            case SLOW_START: // exp grwoth
                 sock->cwnd++; // send pack 
                 if(sock->cwnd >= sock->ssthresh) {
                     sock->congestionState = CONGESTION_AVOIDANCE;
                 }
                 break;
                 
-            case CONGESTION_AVOIDANCE:
+            case CONGESTION_AVOIDANCE: // linear grwoth 
                 sock->cwnd += 1/sock->cwnd;
                 break;
                 
@@ -130,7 +130,7 @@ implementation {
 
 
     // lost packets 
-
+    // retransmits ujnacknowledged segments 
     void retransmitSegment(socket_t fd) {
         socket_store_t* sock = &sockets[fd];
         
@@ -154,22 +154,6 @@ implementation {
         }
     }
 
-
-    bool canSendData(socket_t fd, uint16_t dataLength) {
-        socket_store_t* sock = &sockets[fd];
-        uint16_t outstandingData;
-        
-        if(sock->lastSent >= sock->lastAck) {
-            outstandingData = sock->lastSent - sock->lastAck;
-        } else {
-            outstandingData = SOCKET_BUFFER_SIZE - (sock->lastAck - sock->lastSent);
-        }
-        
-        return (outstandingData + dataLength <= sock->cwnd) && 
-               (outstandingData + dataLength <= sock->effectiveWindow);
-    }
-
-
     void initializeCongestion(socket_t fd) {
         socket_store_t* sock = &sockets[fd];
         sock->cwnd = 1;
@@ -178,34 +162,9 @@ implementation {
         sock->congestionState = SLOW_START;
     }
 
-    // TCP packet Management
-    void createTcpPacket(tcp_packet* tcp, uint16_t srcPort, uint16_t destPort, uint16_t seq, uint16_t ack, uint8_t flags) {
-        tcp->srcPort = srcPort;
-        tcp->destPort = destPort;
-        tcp->seq = seq;
-        tcp->ack = ack;
-        tcp->flags = flags;
-        tcp->advertisedWindow = SOCKET_BUFFER_SIZE;
-        
-        dbg("Transport", "Node %d: Creating TCP [src=%d dst=%d seq=%d ack=%d flags=%d win=%d]\n",
-            TOS_NODE_ID, srcPort, destPort, seq, ack, flags, tcp->advertisedWindow);
-    }
-
-
-    void tcpPacketToPayload(tcp_packet* tcp, void* payload) {
-        dbg("Transport", "Node %d: TCP->Payload conversion\n", TOS_NODE_ID);
-        memcpy(payload, tcp, sizeof(tcp_packet));
-    }
-
-
-    void payloadToTcpPacket(void* payload, tcp_packet* tcp) {
-        dbg("Transport", "Node %d: Payload->TCP conversion\n", TOS_NODE_ID);
-        memcpy(tcp, payload, sizeof(tcp_packet));
-    }
-
+    
     // send tcp pack 
     // use IP 
-
     error_t sendTCPPacket(socket_t fd, uint8_t flags) {
         pack packet;
         tcp_packet tcp;
@@ -227,30 +186,24 @@ implementation {
         
         return call IP.send(packet);
     }
-    /////////////////////////////
 
-    command error_t Transport.receive(pack* package) {
-        tcp_packet tcp;
-        socket_t fd;
+
+
+    // ------- data transmission + flow control + reliabilty stuff ---------// 
+    bool canSendData(socket_t fd, uint16_t dataLength) {
+        socket_store_t* sock = &sockets[fd];
+        uint16_t outstandingData;
         
-        if(package->protocol != PROTOCOL_TCP) {
-            return FAIL;
+        if(sock->lastSent >= sock->lastAck) {
+            outstandingData = sock->lastSent - sock->lastAck;
+        } else {
+            outstandingData = SOCKET_BUFFER_SIZE - (sock->lastAck - sock->lastSent);
         }
         
-        payloadToTcpPacket(package->payload, &tcp);
-        
-        for(fd = 0; fd < MAX_NUM_OF_SOCKETS; fd++) {
-            if(sockets[fd].state != CLOSED && 
-               sockets[fd].src == tcp.destPort &&
-               (sockets[fd].state == LISTEN || 
-                sockets[fd].dest.port == tcp.srcPort)) {
-                handleTCPPacket(fd, &tcp);
-                break;
-            }
-        }
-        
-        return SUCCESS;
+        return (outstandingData + dataLength <= sock->cwnd) && 
+               (outstandingData + dataLength <= sock->effectiveWindow);
     }
+
 
     command uint16_t Transport.read(socket_t fd, uint8_t* buff, uint16_t bufflen) {
         socket_store_t* sock;
@@ -264,7 +217,7 @@ implementation {
         
         sock = &sockets[fd];
         
-        // Calculate available data
+        // calc available data
         if(sock->lastRcvd >= sock->lastRead) {
             available = sock->lastRcvd - sock->lastRead;
         } else {
@@ -278,7 +231,7 @@ implementation {
             buff[i] = sock->rcvdBuff[(sock->lastRead + i) % SOCKET_BUFFER_SIZE];
         }
         
-        // Update read pointer and window
+        // update read pointer and window
         sock->lastRead = (sock->lastRead + bytesToRead) % SOCKET_BUFFER_SIZE;
         sock->effectiveWindow = SOCKET_BUFFER_SIZE - 
             ((sock->lastRcvd - sock->lastRead + SOCKET_BUFFER_SIZE) % SOCKET_BUFFER_SIZE);
@@ -286,6 +239,7 @@ implementation {
         return bytesToRead;
     }
 
+    // check for enough space 
     command uint16_t Transport.write(socket_t fd, uint8_t* buff, uint16_t bufflen) {
         socket_store_t* sock;
         uint8_t spaceAvailable;
@@ -308,13 +262,13 @@ implementation {
         if(bytesToWrite > 0) {
             tcp_packet tcp;
             pack packet;
-            
-            // Copy to send buffer
+        
+            // copy to send buffer
             for(i = 0; i < bytesToWrite; i++) {
                 sock->sendBuff[(sock->lastWritten + i) % SOCKET_BUFFER_SIZE] = buff[i];
             }
             
-            // Create and send TCP packet
+            // create and send TCP packet
             createTcpPacket(&tcp, sock->src, sock->dest.port, 
                           sock->lastSent, sock->nextExpected, FLAG_ACK);
             
@@ -340,6 +294,8 @@ implementation {
         return bytesToWrite;
     }
 
+
+    // ---- connection teardown and cleanup ----- // 
     command error_t Transport.close(socket_t fd) {
         socket_store_t* sock;
         
@@ -377,44 +333,42 @@ implementation {
             return FAIL;
         }
         
-        atomic {
-            // Clear all socket data
-            memset(&sockets[fd], 0, sizeof(socket_store_t));
-            sockets[fd].state = CLOSED;
-            
-            // Reset transmission buffers
-            txBufferHead[fd] = 0;
-            txBufferTail[fd] = 0;
-        }
+        // Clear all socket data
+        memset(&sockets[fd], 0, sizeof(socket_store_t));
+        sockets[fd].state = CLOSED;
+        
+        // Reset transmission buffers
+        txBufferHead[fd] = 0;
+        txBufferTail[fd] = 0;
+
         
         dbg("Transport", "Node %d: Released socket %d\n", TOS_NODE_ID, fd);
         return SUCCESS;
     }
 
-    /////////////////////////////
+    // ---------- connection establishment and socket stuff ------- // 
     command socket_t Transport.socket() {
         socket_t fd;
         dbg("Transport", "Node %d: Creating new socket\n", TOS_NODE_ID);
         
-        atomic {
-            fd = allocateSocket(); // try for free slot 
-            // check if we have enough sockets
-            if(fd >= MAX_NUM_OF_SOCKETS) {  // out of sockets 
-                dbg("Transport", "Node %d: Socket allocation failed\n", TOS_NODE_ID);
-                return NULL_SOCKET;
-            }
-            
-            //buffers for sending and recieving 
-            txBufferHead[fd] = 0;
-            txBufferTail[fd] = 0;
-            memset(&txBuffer[fd], 0, sizeof(transmit_queue_entry) * SOCKET_BUFFER_SIZE);
-            memset(&sockets[fd], 0, sizeof(socket_store_t));
-            
-            sockets[fd].state = CLOSED;
-            sockets[fd].effectiveWindow = SOCKET_BUFFER_SIZE;
-            
-            dbg("Transport", "Node %d: Socket %d created\n", TOS_NODE_ID, fd);
+        fd = allocateSocket(); // try for free slot 
+        // check if we have enough sockets
+        if(fd >= MAX_NUM_OF_SOCKETS) {  // out of sockets 
+            dbg("Transport", "Node %d: Socket allocation failed\n", TOS_NODE_ID);
+            return NULL_SOCKET;
         }
+        
+        //buffers for sending and recieving 
+        txBufferHead[fd] = 0;
+        txBufferTail[fd] = 0;
+        memset(&txBuffer[fd], 0, sizeof(transmit_queue_entry) * SOCKET_BUFFER_SIZE);
+        memset(&sockets[fd], 0, sizeof(socket_store_t));
+        
+        sockets[fd].state = CLOSED;
+        sockets[fd].effectiveWindow = SOCKET_BUFFER_SIZE;
+        
+        dbg("Transport", "Node %d: Socket %d created\n", TOS_NODE_ID, fd);
+    
         return fd;
     }
 
@@ -443,7 +397,6 @@ implementation {
         return FAIL;
     }
 
-    // listen fuinctino HERE //////////////////////
     command error_t Transport.listen(socket_t fd) {
         if(fd >= MAX_NUM_OF_SOCKETS) {
             return FAIL;
@@ -462,6 +415,7 @@ implementation {
     // start connection 
     // socket has to be closed 
     // V
+    // --- Conenct / accetp will go here -- // 
 
     command error_t Transport.connect(socket_t fd, socket_addr_t* addr) {
         socket_store_t* sock;
@@ -494,7 +448,6 @@ implementation {
         return SUCCESS;
     }
 
-
     command socket_t Transport.accept(socket_t fd) {
         uint8_t i;
         
@@ -514,9 +467,20 @@ implementation {
         
         return NULL_SOCKET;
     }
+    // TCP packet Management
+    void createTcpPacket(tcp_packet* tcp, uint16_t srcPort, uint16_t destPort, uint16_t seq, uint16_t ack, uint8_t flags) {
+        tcp->srcPort = srcPort;
+        tcp->destPort = destPort;
+        tcp->seq = seq;
+        tcp->ack = ack;
+        tcp->flags = flags;
+        tcp->advertisedWindow = SOCKET_BUFFER_SIZE;
+        
+        dbg("Transport", "Node %d: Creating TCP [src=%d dst=%d seq=%d ack=%d flags=%d win=%d]\n",
+            TOS_NODE_ID, srcPort, destPort, seq, ack, flags, tcp->advertisedWindow);
+    }
 
     // handle all packet types 
-
     void handleTCPPacket(socket_t fd, tcp_packet* tcp) {
         socket_store_t* sock = &sockets[fd];
         
@@ -618,6 +582,8 @@ implementation {
         }
     }
 
+    // ------- Timers ----------- // 
+
     event void RtTimer.fired() {
         uint8_t fd;
         uint32_t now = call RtTimer.getNow();
@@ -660,6 +626,41 @@ implementation {
                 sendTCPPacket(i, FLAG_ACK);
             }
         }
+    }
+
+    void tcpPacketToPayload(tcp_packet* tcp, void* payload) {
+        dbg("Transport", "Node %d: TCP->Payload conversion\n", TOS_NODE_ID);
+        memcpy(payload, tcp, sizeof(tcp_packet));
+    }
+
+
+    void payloadToTcpPacket(void* payload, tcp_packet* tcp) {
+        dbg("Transport", "Node %d: Payload->TCP conversion\n", TOS_NODE_ID);
+        memcpy(tcp, payload, sizeof(tcp_packet));
+    }
+
+    // ---------- IP layer and pack reception ++ --------- //
+    command error_t Transport.receive(pack* package) {
+        tcp_packet tcp;
+        socket_t fd;
+        
+        if(package->protocol != PROTOCOL_TCP) {
+            return FAIL;
+        }
+        
+        payloadToTcpPacket(package->payload, &tcp);
+        
+        for(fd = 0; fd < MAX_NUM_OF_SOCKETS; fd++) {
+            if(sockets[fd].state != CLOSED && 
+               sockets[fd].src == tcp.destPort &&
+               (sockets[fd].state == LISTEN || 
+                sockets[fd].dest.port == tcp.srcPort)) {
+                handleTCPPacket(fd, &tcp);
+                break;
+            }
+        }
+        
+        return SUCCESS;
     }
 
     event void IP.receive(pack* packet) {
